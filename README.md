@@ -36,6 +36,12 @@ This package can be installed from [PyPi](https://pypi.python.org/pypi/ChatterBo
 pip install chatterbot
 ```
 
+For Raspberry Pi users: download or clone the repo and then run the install script:
+
+```
+./install.sh
+```
+
 ## Basic Usage
 
 ```

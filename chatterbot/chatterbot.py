@@ -127,10 +127,11 @@ class ChatBot(object):
                     setattr(response, response_key, response_value)
 
         if not self.read_only:
-            self.learn_response(input_statement)
+            # want to learn that response is valid for input statement
+            self.learn_response(response, input_statement)
 
-            # Save the response generated for the input
-            self.storage.create(**response.serialize())
+            # also save the input statement
+            self.storage.create(**input_statement.serialize())
 
         return response
 
@@ -211,6 +212,8 @@ class ChatBot(object):
         """
         Learn that the statement provided is a valid response.
         """
+        if not statement.search_text:
+            statement.search_text = self.storage.tagger.get_text_index_string(statement.text)
         if not previous_statement:
             previous_statement = statement.in_response_to
 
@@ -223,15 +226,19 @@ class ChatBot(object):
 
         if not isinstance(previous_statement, (str, type(None), )):
             statement.in_response_to = previous_statement.text
+            if not statement.search_in_response_to:
+                statement.search_in_response_to = previous_statement.search_text
         elif isinstance(previous_statement, str):
             statement.in_response_to = previous_statement
+            if not statement.search_in_response_to:        
+                statement.search_in_response_to = self.storage.tagger.get_text_index_string(previous_statement)
 
         self.logger.info('Adding "{}" as a response to "{}"'.format(
             statement.text,
             previous_statement_text
         ))
 
-        # Save the input statement
+        # Save the response
         return self.storage.create(**statement.serialize())
 
     def get_latest_response(self, conversation):

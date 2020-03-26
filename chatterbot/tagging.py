@@ -1,6 +1,6 @@
 import string
 from chatterbot import languages
-
+from chatterbot import singleton_classes
 
 class LowercaseTagger(object):
     """
@@ -17,13 +17,12 @@ class LowercaseTagger(object):
 class PosLemmaTagger(object):
 
     def __init__(self, language=None):
-        import spacy
 
         self.language = language or languages.ENG
 
         self.punctuation_table = str.maketrans(dict.fromkeys(string.punctuation))
 
-        self.nlp = spacy.load(self.language.ISO_639_1.lower())
+        self.nlp = singleton_classes.singleSpacy.getInstance(language)
 
     def get_text_index_string(self, text):
         """

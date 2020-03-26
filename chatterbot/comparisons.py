@@ -3,7 +3,7 @@ This module contains various text-comparison algorithms
 designed to compare one statement to another.
 """
 from difflib import SequenceMatcher
-
+from chatterbot import singleton_classes
 
 class Comparator:
 
@@ -63,9 +63,8 @@ class SpacySimilarity(Comparator):
 
     def __init__(self, language):
         super().__init__(language)
-        import spacy
 
-        self.nlp = spacy.load(self.language.ISO_639_1)
+        self.nlp = singleton_classes.singleSpacy.getInstance(language)
 
     def compare(self, statement_a, statement_b):
         """

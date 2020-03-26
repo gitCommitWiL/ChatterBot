@@ -21,6 +21,7 @@ class BestMatch(LogicAdapter):
         super().__init__(chatbot, **kwargs)
 
         self.excluded_words = kwargs.get('excluded_words')
+        self.exclude_recent_repeated = kwargs.get('exclude_recent_repeated')
 
     def process(self, input_statement, additional_response_selection_parameters=None):
         search_results = self.search_algorithm.search(input_statement)
@@ -40,15 +41,19 @@ class BestMatch(LogicAdapter):
             closest_match.text, input_statement.text, closest_match.confidence
         ))
 
-        recent_repeated_responses = filters.get_recent_repeated_responses(
-            self.chatbot,
-            input_statement.conversation
-        )
+        recent_repeated_responses = None
 
-        for index, recent_repeated_response in enumerate(recent_repeated_responses):
-            self.chatbot.logger.info('{}. Excluding recent repeated response of "{}"'.format(
-                index, recent_repeated_response
-            ))
+        # remove recently repeated only if user specifies
+        if self.exclude_recent_repeated:
+            recent_repeated_responses = filters.get_recent_repeated_responses(
+                self.chatbot,
+                input_statement.conversation
+            )
+
+            for index, recent_repeated_response in enumerate(recent_repeated_responses):
+                self.chatbot.logger.info('{}. Excluding recent repeated response of "{}"'.format(
+                    index, recent_repeated_response
+                ))
 
         response_selection_parameters = {
             'search_in_response_to': closest_match.search_text,

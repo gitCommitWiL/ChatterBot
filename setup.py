@@ -42,7 +42,6 @@ with open('requirements.txt') as requirements:
         else:
             REQUIREMENTS.append(requirement)
 
-
 setup(
     name='ChatterBot',
     version=VERSION,
@@ -71,7 +70,7 @@ setup(
     dependency_links=DEPENDENCIES,
     python_requires='>=3.4, <4',
     license='BSD',
-    zip_safe=True,
+    zip_safe=False,
     platforms=['any'],
     keywords=['ChatterBot', 'chatbot', 'chat', 'bot'],
     classifiers=[

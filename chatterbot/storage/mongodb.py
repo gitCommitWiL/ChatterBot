@@ -124,6 +124,8 @@ class MongoDatabaseAdapter(StorageAdapter):
             or_regex = '|'.join([
                 '{}'.format(re.escape(word)) for word in search_text_contains.split(' ')
             ])
+            # try matching whole words rather than part; for example 'hi' shouldn't match 'white'
+            or_regex = '\\b' + or_regex + '\\b'
             kwargs['search_text'] = re.compile(or_regex)
 
         mongo_ordering = []
