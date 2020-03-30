@@ -41,6 +41,8 @@ class MongoDatabaseAdapter(StorageAdapter):
         # The mongo collection of statement documents
         self.statements = self.database['statements']
 
+        self.latestResponses = self.database['latestResponses']
+
     def get_statement_model(self):
         """
         Return the class for the statement model.
@@ -81,6 +83,15 @@ class MongoDatabaseAdapter(StorageAdapter):
         exclude_text_words = kwargs.pop('exclude_text_words', [])
         persona_not_startswith = kwargs.pop('persona_not_startswith', None)
         search_text_contains = kwargs.pop('search_text_contains', None)
+        text_contains = kwargs.pop('text_contains', None)
+        in_response_to_contains = kwargs.pop('in_response_to_contains', None)
+        search_in_response_to_contains = kwargs.pop('search_in_response_to_contains', None)
+        useStatementsCollection = kwargs.pop('statementsCollection', True)
+
+        collection = self.statements
+
+        if not useStatementsCollection:
+            collection = self.latestResponses
 
         if tags:
             kwargs['tags'] = {
@@ -126,7 +137,28 @@ class MongoDatabaseAdapter(StorageAdapter):
             ])
             # try matching whole words rather than part; for example 'hi' shouldn't match 'white'
             or_regex = '\\b' + or_regex + '\\b'
-            kwargs['search_text'] = re.compile(or_regex)
+            kwargs['search_text'] = re.compile(or_regex, re.IGNORECASE)
+
+        if text_contains:
+            or_regex = '|'.join([
+                '{}'.format(re.escape(word)) for word in text_contains.split(' ')
+            ])
+            or_regex = '\\b' + or_regex + '\\b'
+            kwargs['text'] = re.compile(or_regex, re.IGNORECASE)
+
+        if in_response_to_contains:
+            or_regex = '|'.join([
+                '{}'.format(re.escape(word)) for word in in_response_to_contains.split(' ')
+            ])
+            or_regex = '\\b' + or_regex + '\\b'
+            kwargs['in_response_to'] = re.compile(or_regex, re.IGNORECASE)
+
+        if search_in_response_to_contains:
+            or_regex = '|'.join([
+                '{}'.format(re.escape(word)) for word in search_in_response_to_contains.split(' ')
+            ])
+            or_regex = '\\b' + or_regex + '\\b'
+            kwargs['search_in_response_to'] = re.compile(or_regex, re.IGNORECASE)
 
         mongo_ordering = []
 
@@ -140,14 +172,14 @@ class MongoDatabaseAdapter(StorageAdapter):
             for order in order_by:
                 mongo_ordering.append((order, pymongo.ASCENDING))
 
-        total_statements = self.statements.find(kwargs).count()
+        total_statements = collection.find(kwargs).count()
 
         for start_index in range(0, total_statements, page_size):
             if mongo_ordering:
-                for match in self.statements.find(kwargs).sort(mongo_ordering).skip(start_index).limit(page_size):
+                for match in collection.find(kwargs).sort(mongo_ordering).skip(start_index).limit(page_size):
                     yield self.mongo_to_object(match)
             else:
-                for match in self.statements.find(kwargs).skip(start_index).limit(page_size):
+                for match in collection.find(kwargs).skip(start_index).limit(page_size):
                     yield self.mongo_to_object(match)
 
     def create(self, **kwargs):
@@ -166,6 +198,8 @@ class MongoDatabaseAdapter(StorageAdapter):
         if 'search_in_response_to' not in kwargs:
             if kwargs.get('in_response_to'):
                 kwargs['search_in_response_to'] = self.tagger.get_text_index_string(kwargs['in_response_to'])
+
+        kwargs['count'] = 1
 
         inserted = self.statements.insert_one(kwargs)
 
@@ -190,40 +224,61 @@ class MongoDatabaseAdapter(StorageAdapter):
             if not statement.search_in_response_to and statement.in_response_to:
                 statement_data['search_in_response_to'] = self.tagger.get_text_index_string(statement.in_response_to)
 
+            statement_data['count'] = 1
+
             create_statements.append(statement_data)
 
         self.statements.insert_many(create_statements)
 
-    def update(self, statement):
+    def update(self, statement, useText=True, useStatementsCollection=True, setNewTags=False, useInResponseTo=False):
         data = statement.serialize()
+
         data.pop('id', None)
         data.pop('tags', None)
+        data.pop('count', None)
 
-        data['search_text'] = self.tagger.get_text_index_string(data['text'])
+        if statement.search_text:
+            data['search_text'] = statement.search_text
+        else:
+            data['search_text'] = self.tagger.get_text_index_string(data['text'])
 
-        if data.get('in_response_to'):
+        collection = self.statements
+
+        if not useStatementsCollection:
+            collection = self.latestResponses
+
+        if statement.search_in_response_to:
+            data['search_in_response_to'] = statement.search_in_response_to
+        elif data.get('in_response_to'):
             data['search_in_response_to'] = self.tagger.get_text_index_string(data['in_response_to'])
 
-        update_data = {
-            '$set': data
-        }
+        update_data = {'$setOnInsert': {"id": None}, "$inc": {"count": 1}}
 
-        if statement.tags:
+        if setNewTags:
+            data['tags'] = statement.tags
+        elif statement.tags:
             update_data['$addToSet'] = {
                 'tags': {
                     '$each': statement.tags
                 }
             }
+        else:
+            update_data['$setOnInsert']["tags"] = []
+
+        update_data['$set'] = data
 
         search_parameters = {}
 
         if statement.id is not None:
             search_parameters['_id'] = statement.id
         else:
-            search_parameters['text'] = statement.text
+            if useText:
+                search_parameters['text'] = statement.text
+            if useInResponseTo:
+                search_parameters['in_response_to'] = statement.in_response_to
             search_parameters['conversation'] = statement.conversation
 
-        update_operation = self.statements.update_one(
+        update_operation = collection.update_one(
             search_parameters,
             update_data,
             upsert=True

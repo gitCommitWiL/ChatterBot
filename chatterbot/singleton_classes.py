@@ -5,6 +5,7 @@ import spacy
 # so having a single instance will save memory
 class singleSpacy:
     _instance = None
+    language = None
     @staticmethod
     def getInstance(language=None):
         if singleSpacy._instance is None:
@@ -12,5 +13,5 @@ class singleSpacy:
         return singleSpacy._instance
 
     def __init__(self, language=None):
-        language = language or languages.ENG
-        singleSpacy._instance = spacy.load(language.ISO_639_1.lower())
+        self.language = language or languages.ENG
+        singleSpacy._instance = spacy.load(self.language.ISO_639_1.lower())

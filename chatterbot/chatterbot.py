@@ -3,8 +3,8 @@ from chatterbot.storage import StorageAdapter
 from chatterbot.logic import LogicAdapter
 from chatterbot.search import TextSearch, IndexedTextSearch
 from chatterbot import utils
-
-
+import datetime
+import copy
 class ChatBot(object):
     """
     A conversational dialog chat bot.
@@ -95,6 +95,8 @@ class ChatBot(object):
 
         tags = kwargs.pop('tags', [])
 
+        bannedFromLearning = kwargs.pop('bannedFromLearning', False)
+
         text = kwargs.pop('text')
 
         input_statement = Statement(text=text, **kwargs)
@@ -125,14 +127,34 @@ class ChatBot(object):
                 else:
                     setattr(input_statement, response_key, response_value)
                     setattr(response, response_key, response_value)
+        
+        # just in case need to prevent specific trolls
+        if not bannedFromLearning and not self.read_only:
+            # learn that user's input is a valid response to bot's last response
+            # so need bot's last response to be saved somewhere
+            self.learn_response(input_statement)
 
-        if not self.read_only:
-            # want to learn that response is valid for input statement
-            self.learn_response(response, input_statement)
+            # for when using a default response, but still want to learn that input is a valid response (to previous response)
+            if self.read_only is None:
 
-            # also save the input statement
-            self.storage.create(**input_statement.serialize())
+                # tag refers to the use of default response; for the next input, don't learn with this input
+                response.tags = ["newResponse"]
 
+            # for regular learning
+            else:
+
+                # if confidence is 1, then this is a duplicate so don't learn the duplicate response
+                # or maybe allow so that can add to stats?
+                if response.confidence != 1:
+
+                    # want to also learn that bot response is valid for user's input statement
+                    self.learn_response(response, input_statement)
+
+                # empty tags for latestResponse collection
+                response.tags = []
+
+            # record/ update the latest reponse by bot in the conversation
+            self.storage.update(response, useText=False, useStatementsCollection=False, setNewTags=True, useInResponseTo=False)
         return response
 
     def generate_response(self, input_statement, additional_response_selection_parameters=None):
@@ -208,74 +230,84 @@ class ChatBot(object):
 
         return response
 
-    def learn_response(self, statement, previous_statement=None):
+    def learn_response(self, statement, previous_statement=None, applyPreprocessors=True):
         """
         Learn that the statement provided is a valid response.
         """
+
+        statement.text = statement.text.capitalize()
         if not statement.search_text:
             statement.search_text = self.storage.tagger.get_text_index_string(statement.text)
+
         if not previous_statement:
             previous_statement = statement.in_response_to
 
         if not previous_statement:
-            previous_statement = self.get_latest_response(statement.conversation)
-            if previous_statement:
-                previous_statement = previous_statement.text
+            previous_statement = self.get_latest_response(statement.conversation, fromBot=True, useStatementsCollection=False)
 
-        previous_statement_text = previous_statement
+        ## if still nothing, then return; or if newResponse in tags skip (bot responded with default to this input)
+        if not previous_statement or (previous_statement.tags and 'newResponse' in previous_statement.tags):
+            return
+        previous_statement_text = previous_statement.text
 
         if not isinstance(previous_statement, (str, type(None), )):
             statement.in_response_to = previous_statement.text
             if not statement.search_in_response_to:
                 statement.search_in_response_to = previous_statement.search_text
+
         elif isinstance(previous_statement, str):
             statement.in_response_to = previous_statement
-            if not statement.search_in_response_to:        
+            if not statement.search_in_response_to:
                 statement.search_in_response_to = self.storage.tagger.get_text_index_string(previous_statement)
 
         self.logger.info('Adding "{}" as a response to "{}"'.format(
             statement.text,
             previous_statement_text
         ))
+        if applyPreprocessors:
+            for preprocessor in self.preprocessors:
+                statement = preprocessor(statement)
+        statementCopy = copy.copy(statement)
+        statementCopy.conversation = ''
+       # will upsert if doesn't exist, otherwise just update existing (tags and stuff); don't create duplicate
+       return self.storage.update(statementCopy, useInResponseTo=True)
 
-        # Save the response
-        return self.storage.create(**statement.serialize())
-
-    def get_latest_response(self, conversation):
+    def get_latest_response(self, conversation, fromBot=True, recentMinutes=2, useStatementsCollection=True):
         """
         Returns the latest response in a conversation if it exists.
         Returns None if a matching conversation cannot be found.
-        """
-        from chatterbot.conversation import Statement as StatementObject
 
-        conversation_statements = list(self.storage.filter(
-            conversation=conversation,
-            order_by=['id']
-        ))
+        fromBot: True if want the latest response specifically from chatbot
+        recentMinutes: make sure response retrieved is within the past recentMinutes minutes
+        """
+
+
+        arguments = {
+            "conversation": conversation,
+            "order_by": ['created_at'],
+            'statementsCollection': useStatementsCollection,
+        }
+
+        ## find latest statement from bot
+        if fromBot:
+            arguments["persona"] = 'bot:' + self.name
+
+        conversation_statements = list(self.storage.filter(**arguments))
+
 
         # Get the most recent statement in the conversation if one exists
-        latest_statement = conversation_statements[-1] if conversation_statements else None
+        latest_statement = conversation_statements[0] if conversation_statements else None
 
-        if latest_statement:
-            if latest_statement.in_response_to:
+        ## if the latest statment was not from bot and want from bot, then don't get (probs means bot used default reponse)
+        #if fromBot and latest_statement.persona != 'bot:' + self.name:
+        #    return None
 
-                response_statements = list(self.storage.filter(
-                    conversation=conversation,
-                    text=latest_statement.in_response_to,
-                    order_by=['id']
-                ))
-
-                if response_statements:
-                    return response_statements[-1]
-                else:
-                    return StatementObject(
-                        text=latest_statement.in_response_to,
-                        conversation=conversation
-                    )
-            else:
-                # The case that the latest statement is not in response to another statement
-                return latest_statement
-
+        ## if 0 or less, ignore minutes
+        if recentMinutes <= 0:
+            return latest_statement
+        ## get a recent response; otherwise reponse might not be related
+        if latest_statement and latest_statement.created_at.replace(tzinfo=None) >= datetime.datetime.now() - datetime.timedelta(minutes=recentMinutes):
+            return latest_statement
         return None
 
     class ChatBotException(Exception):

@@ -63,17 +63,29 @@ class IndexedTextSearch:
         if additional_parameters:
             search_parameters.update(additional_parameters)
 
-        statement_list = self.chatbot.storage.filter(**search_parameters)
+        statement_list = list(self.chatbot.storage.filter(**search_parameters))
+
+        ## if didn't get anything, try with just the regular text in more general search
+        if not statement_list:
+            search_parameters = {
+                'text_contains': input_statement.text,
+                'persona_not_startswith': 'bot:',
+                'page_size': self.search_page_size
+            }
+
+            if additional_parameters:
+                search_parameters.update(additional_parameters)
+
+            statement_list = statement_list + list(self.chatbot.storage.filter(**search_parameters))
 
         best_confidence_so_far = 0
 
         self.chatbot.logger.info('Processing search results')
-
         # Find the closest matching known statement
         for statement in statement_list:
             confidence = self.compare_statements(input_statement, statement)
 
-            if confidence > best_confidence_so_far:
+            if confidence >= best_confidence_so_far:
                 best_confidence_so_far = confidence
                 statement.confidence = confidence
 
