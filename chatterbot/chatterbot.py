@@ -269,8 +269,8 @@ class ChatBot(object):
                 statement = preprocessor(statement)
         statementCopy = copy.copy(statement)
         statementCopy.conversation = ''
-       # will upsert if doesn't exist, otherwise just update existing (tags and stuff); don't create duplicate
-       return self.storage.update(statementCopy, useInResponseTo=True)
+        # will upsert if doesn't exist, otherwise just update existing (tags and stuff); don't create duplicate
+        return self.storage.update(statementCopy, useInResponseTo=True)
 
     def get_latest_response(self, conversation, fromBot=True, recentMinutes=2, useStatementsCollection=True):
         """
