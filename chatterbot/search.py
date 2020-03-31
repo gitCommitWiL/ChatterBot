@@ -163,7 +163,7 @@ class TextSearch:
                 best_confidence_so_far = confidence
                 statement.confidence = confidence
 
-                self.chatbot.logger.info('Similar text found: {} {}'.format(
+                self.chatbot.logger.info('Similar text found: {}; confidence of {}'.format(
                     statement.text, confidence
                 ))
 

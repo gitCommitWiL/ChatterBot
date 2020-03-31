@@ -74,10 +74,8 @@ class MongoDatabaseAdapter(StorageAdapter):
         Returns a list of statements in the database
         that match the parameters specified.
         """
-        import pymongo
 
         page_size = kwargs.pop('page_size', 1000)
-        order_by = kwargs.pop('order_by', None)
         tags = kwargs.pop('tags', [])
         exclude_text = kwargs.pop('exclude_text', None)
         exclude_text_words = kwargs.pop('exclude_text_words', [])
@@ -87,6 +85,7 @@ class MongoDatabaseAdapter(StorageAdapter):
         in_response_to_contains = kwargs.pop('in_response_to_contains', None)
         search_in_response_to_contains = kwargs.pop('search_in_response_to_contains', None)
         useStatementsCollection = kwargs.pop('statementsCollection', True)
+        sortBy = kwargs.pop('sort', {})
 
         collection = self.statements
 
@@ -160,27 +159,15 @@ class MongoDatabaseAdapter(StorageAdapter):
             or_regex = '\\b' + or_regex + '\\b'
             kwargs['search_in_response_to'] = re.compile(or_regex, re.IGNORECASE)
 
-        mongo_ordering = []
+        relatedStatements = []
 
-        if order_by:
+        if sortBy:
+            relatedStatements = collection.aggregate([{"$match": kwargs}, {'$sort': sortBy}, {"$group": {"_id": "$text", "details": {"$first": '$$CURRENT'}}}, {'$limit': page_size}])
+        else:
+            relatedStatements = collection.aggregate([{"$match": kwargs}, {"$group": {"_id": "$text", "details": {"$first": '$$CURRENT'}}}, {'$limit': page_size}])
 
-            # Sort so that newer datetimes appear first
-            if 'created_at' in order_by:
-                order_by.remove('created_at')
-                mongo_ordering.append(('created_at', pymongo.DESCENDING, ))
-
-            for order in order_by:
-                mongo_ordering.append((order, pymongo.ASCENDING))
-
-        total_statements = collection.find(kwargs).count()
-
-        for start_index in range(0, total_statements, page_size):
-            if mongo_ordering:
-                for match in collection.find(kwargs).sort(mongo_ordering).skip(start_index).limit(page_size):
-                    yield self.mongo_to_object(match)
-            else:
-                for match in collection.find(kwargs).skip(start_index).limit(page_size):
-                    yield self.mongo_to_object(match)
+        for match in relatedStatements:
+            yield self.mongo_to_object(match['details'])
 
     def create(self, **kwargs):
         """

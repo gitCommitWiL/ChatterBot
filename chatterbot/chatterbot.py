@@ -233,7 +233,6 @@ class ChatBot(object):
         Learn that the statement provided is a valid response.
         """
 
-        statement.text = statement.text.capitalize()
         if not statement.search_text:
             statement.search_text = self.storage.tagger.get_text_index_string(statement.text)
 
@@ -281,7 +280,7 @@ class ChatBot(object):
 
         arguments = {
             "conversation": conversation,
-            "order_by": ['created_at'],
+            "sort": {'created_at': -1},
             'statementsCollection': useStatementsCollection,
         }
 
@@ -293,10 +292,6 @@ class ChatBot(object):
 
         # Get the most recent statement in the conversation if one exists
         latest_statement = conversation_statements[0] if conversation_statements else None
-
-        # if the latest statment was not from bot and want from bot, then don't get (probs means bot used default reponse)
-        #if fromBot and latest_statement.persona != 'bot:' + self.name:
-        #    return None
 
         # if 0 or less, ignore minutes
         if recentMinutes <= 0:
