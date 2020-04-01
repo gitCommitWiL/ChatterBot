@@ -5,6 +5,7 @@ from chatterbot.search import TextSearch, IndexedTextSearch
 from chatterbot import utils
 import datetime
 import copy
+
 class ChatBot(object):
     """
     A conversational dialog chat bot.
@@ -99,9 +100,17 @@ class ChatBot(object):
 
         text = kwargs.pop('text')
 
+        ## use spaCy early
+        nlpText = self.storage.tagger.nlp(text)
+
+        ## store these 2 values
+        kwargs['vector'] = nlpText.vector.tolist()
+        kwargs['vector_norm'] = nlpText.vector_norm
+
         input_statement = Statement(text=text, **kwargs)
 
         input_statement.add_tags(*tags)
+
 
         # Preprocess the input statement
         for preprocessor in self.preprocessors:
@@ -128,12 +137,19 @@ class ChatBot(object):
                     setattr(input_statement, response_key, response_value)
                     setattr(response, response_key, response_value)
 
+        # reset these values for learning
+        input_statement.vector = []
+        input_statement.vector_norm = 0
+
         # just in case need to prevent specific trolls
         if not bannedFromLearning and not self.read_only:
-            # learn that user's input is a valid response to bot's last response
-            # so need bot's last response to be saved somewhere
-            self.learn_response(input_statement)
 
+            if "learnResponseOnly" not in input_statement.tags and "learnResponseOnly" not in response.tags:
+                # learn that user's input is a valid response to bot's last response
+                self.learn_response(input_statement)
+            else:
+                # remove the learnResponseOnly tag from input
+                input_statement.tags.remove("learnResponseOnly")
             # for when using a default response, but still want to learn that input is a valid response (to previous response)
             if self.read_only is None:
 
@@ -142,7 +158,6 @@ class ChatBot(object):
 
             # for regular learning
             else:
-
                 # if confidence is 1, then this is a duplicate, but learn for stats (won't create another duplicate)
 
                 # want to also learn that bot response is valid for user's input statement
@@ -256,6 +271,15 @@ class ChatBot(object):
             statement.in_response_to = previous_statement
             if not statement.search_in_response_to:
                 statement.search_in_response_to = self.storage.tagger.get_text_index_string(previous_statement)
+
+        ## fill out the vector response information
+        if not statement.vector:
+            ## use spaCy early
+            nlpText = self.storage.tagger.nlp(previous_statement.text)
+
+            ## store these 2 values
+            statement.vector =  nlpText.vector.tolist()
+            statement.vector_norm = nlpText.vector_norm
 
         self.logger.info('Adding "{}" as a response to "{}"'.format(
             statement.text,

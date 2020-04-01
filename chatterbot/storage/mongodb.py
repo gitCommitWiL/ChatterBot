@@ -1,7 +1,6 @@
 import re
 from chatterbot.storage import StorageAdapter
 
-
 class MongoDatabaseAdapter(StorageAdapter):
     """
     The MongoDatabaseAdapter is an interface that allows
@@ -86,6 +85,7 @@ class MongoDatabaseAdapter(StorageAdapter):
         search_in_response_to_contains = kwargs.pop('search_in_response_to_contains', None)
         useStatementsCollection = kwargs.pop('statementsCollection', True)
         sortBy = kwargs.pop('sort', {})
+        groupBy = kwargs.pop('group', "text")
 
         collection = self.statements
 
@@ -142,6 +142,7 @@ class MongoDatabaseAdapter(StorageAdapter):
             or_regex = '|'.join([
                 '{}'.format(re.escape(word)) for word in text_contains.split(' ')
             ])
+            # try matching whole words rather than part; for example 'hi' shouldn't match 'white'
             or_regex = '\\b' + or_regex + '\\b'
             kwargs['text'] = re.compile(or_regex, re.IGNORECASE)
 
@@ -149,6 +150,7 @@ class MongoDatabaseAdapter(StorageAdapter):
             or_regex = '|'.join([
                 '{}'.format(re.escape(word)) for word in in_response_to_contains.split(' ')
             ])
+            # try matching whole words rather than part; for example 'hi' shouldn't match 'white'
             or_regex = '\\b' + or_regex + '\\b'
             kwargs['in_response_to'] = re.compile(or_regex, re.IGNORECASE)
 
@@ -156,15 +158,16 @@ class MongoDatabaseAdapter(StorageAdapter):
             or_regex = '|'.join([
                 '{}'.format(re.escape(word)) for word in search_in_response_to_contains.split(' ')
             ])
+            # try matching whole words rather than part; for example 'hi' shouldn't match 'white'
             or_regex = '\\b' + or_regex + '\\b'
             kwargs['search_in_response_to'] = re.compile(or_regex, re.IGNORECASE)
 
         relatedStatements = []
-
+        print(kwargs)
         if sortBy:
-            relatedStatements = collection.aggregate([{"$match": kwargs}, {'$sort': sortBy}, {"$group": {"_id": "$text", "details": {"$first": '$$CURRENT'}}}, {'$limit': page_size}])
+            relatedStatements = collection.aggregate([{"$match": kwargs}, {'$sort': sortBy}, {"$group": {"_id": "$" + groupBy, "details": {"$first": '$$CURRENT'}}}, {'$limit': page_size}])
         else:
-            relatedStatements = collection.aggregate([{"$match": kwargs}, {"$group": {"_id": "$text", "details": {"$first": '$$CURRENT'}}}, {'$limit': page_size}])
+            relatedStatements = collection.aggregate([{"$match": kwargs}, {"$group": {"_id": "$" + groupBy, "details": {"$first": '$$CURRENT'}}}, {'$limit': page_size}])
 
         for match in relatedStatements:
             yield self.mongo_to_object(match['details'])
@@ -185,9 +188,8 @@ class MongoDatabaseAdapter(StorageAdapter):
         if 'search_in_response_to' not in kwargs:
             if kwargs.get('in_response_to'):
                 kwargs['search_in_response_to'] = self.tagger.get_text_index_string(kwargs['in_response_to'])
-
         kwargs['count'] = 1
-
+        kwargs['conversation'] = ''
         inserted = self.statements.insert_one(kwargs)
 
         kwargs['id'] = inserted.inserted_id
@@ -210,16 +212,14 @@ class MongoDatabaseAdapter(StorageAdapter):
 
             if not statement.search_in_response_to and statement.in_response_to:
                 statement_data['search_in_response_to'] = self.tagger.get_text_index_string(statement.in_response_to)
-
-            statement_data['count'] = 1
-
+            statement_data['count'] = 1 
+            statement_data['conversation'] = ''
             create_statements.append(statement_data)
 
         self.statements.insert_many(create_statements)
 
     def update(self, statement, useText=True, useStatementsCollection=True, setNewTags=False, useInResponseTo=False):
         data = statement.serialize()
-
         data.pop('id', None)
         data.pop('tags', None)
         data.pop('count', None)
@@ -250,12 +250,9 @@ class MongoDatabaseAdapter(StorageAdapter):
                 }
             }
         else:
-            update_data['$setOnInsert']["tags"] = []
-
+            update_data['$setOnInsert']['tags'] = []
         update_data['$set'] = data
-
         search_parameters = {}
-
         if statement.id is not None:
             search_parameters['_id'] = statement.id
         else:

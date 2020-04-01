@@ -89,7 +89,7 @@ class IndexedTextSearch:
                 best_confidence_so_far = confidence
                 statement.confidence = confidence
 
-                self.chatbot.logger.info('Similar text found: {} {}'.format(
+                self.chatbot.logger.info('Similar text found: {}; confidence of  {}'.format(
                     statement.text, confidence
                 ))
 
@@ -159,7 +159,7 @@ class TextSearch:
         for statement in statement_list:
             confidence = self.compare_statements(input_statement, statement)
 
-            if confidence > best_confidence_so_far:
+            if confidence >= best_confidence_so_far:
                 best_confidence_so_far = confidence
                 statement.confidence = confidence
 

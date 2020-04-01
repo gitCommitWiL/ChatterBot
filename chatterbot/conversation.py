@@ -19,7 +19,10 @@ class StatementMixin(object):
         'in_response_to',
         'search_in_response_to',
         'created_at',
-        'count'
+        'count',
+        # for spaCy
+        'vector',
+        'vector_norm',
     ]
 
     extra_statement_field_names = []
@@ -81,6 +84,9 @@ class Statement(StatementMixin):
         'confidence',
         'storage',
         'count',
+        # for spaCy
+        'vector',
+        'vector_norm',
     )
 
     def __init__(self, text, in_response_to=None, **kwargs):
@@ -95,6 +101,9 @@ class Statement(StatementMixin):
         self.search_in_response_to = kwargs.get('search_in_response_to', '')
         self.created_at = kwargs.get('created_at', datetime.now())
         self.count = kwargs.pop('count', 1)
+        # for spaCy
+        self.vector = kwargs.pop('vector', [])
+        self.vector_norm = kwargs.pop('vector_norm', 0)
 
         if not isinstance(self.created_at, datetime):
             self.created_at = date_parser.parse(self.created_at)

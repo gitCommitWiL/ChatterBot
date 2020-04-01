@@ -87,7 +87,8 @@ class ListTrainer(Trainer):
         """
         previous_statement_text = None
         previous_statement_search_text = ''
-
+        previous_vector = []
+        previous_vector_norm = 0
         statements_to_create = []
 
         for conversation_count, text in enumerate(conversation):
@@ -98,19 +99,24 @@ class ListTrainer(Trainer):
                 )
 
             statement_search_text = self.chatbot.storage.tagger.get_text_index_string(text)
-
+            statementNLP = self.chatbot.storage.tagger.nlp(text)
+            statement_vector = statementNLP.vector.tolist()
             statement = self.get_preprocessed_statement(
                 Statement(
                     text=text,
                     search_text=statement_search_text,
                     in_response_to=previous_statement_text,
                     search_in_response_to=previous_statement_search_text,
-                    conversation='training'
+                    conversation='training',
+                    vector=previous_vector,
+                    vector_norm=previous_vector_norm,
                 )
             )
 
             previous_statement_text = statement.text
             previous_statement_search_text = statement_search_text
+            previous_vector = statement_vector
+            previous_vector_norm = statementNLP.vector_norm
 
             statements_to_create.append(statement)
 
@@ -148,17 +154,22 @@ class ChatterBotCorpusTrainer(Trainer):
 
                 previous_statement_text = None
                 previous_statement_search_text = ''
-
+                previous_vector = []
+                previous_vector_norm = 0
                 for text in conversation:
 
                     statement_search_text = self.chatbot.storage.tagger.get_text_index_string(text)
+                    statementNLP = self.chatbot.storage.tagger.nlp(text)
+                    statement_vector = statementNLP.vector.tolist()
 
                     statement = Statement(
                         text=text,
                         search_text=statement_search_text,
                         in_response_to=previous_statement_text,
                         search_in_response_to=previous_statement_search_text,
-                        conversation='training'
+                        conversation='training',
+                        vector=previous_vector,
+                        vector_norm=previous_vector_norm,
                     )
 
                     statement.add_tags(*categories)
@@ -167,6 +178,8 @@ class ChatterBotCorpusTrainer(Trainer):
 
                     previous_statement_text = statement.text
                     previous_statement_search_text = statement_search_text
+                    previous_vector = statement_vector
+                    previous_vector_norm = statementNLP.vector_norm
 
                     statements_to_create.append(statement)
 
@@ -323,15 +336,21 @@ class UbuntuCorpusTrainer(Trainer):
 
                     previous_statement_text = None
                     previous_statement_search_text = ''
+                    previous_vector = []
+                    previous_vector_norm = 0
 
                     for row in reader:
                         if len(row) > 0:
+                            statementNLP = self.chatbot.storage.tagger.nlp(row[3])
+                            statement_vector = statementNLP.vector.tolist()
                             statement = Statement(
                                 text=row[3],
                                 in_response_to=previous_statement_text,
                                 conversation='training',
                                 created_at=date_parser.parse(row[0]),
-                                persona=row[1]
+                                persona=row[1],
+                                vector=previous_vector,
+                                vector_norm=previous_vector_norm,
                             )
 
                             for preprocessor in self.chatbot.preprocessors:
@@ -342,6 +361,8 @@ class UbuntuCorpusTrainer(Trainer):
 
                             previous_statement_text = statement.text
                             previous_statement_search_text = statement.search_text
+                            previous_vector = statement_vector
+                            previous_vector_norm = statementNLP.vector_norm
 
                             statements_from_file.append(statement)
 
