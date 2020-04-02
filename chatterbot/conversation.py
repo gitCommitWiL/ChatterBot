@@ -19,6 +19,7 @@ class StatementMixin(object):
         'in_response_to',
         'search_in_response_to',
         'created_at',
+        'last_updated_at',
         'count',
         # for spaCy
         'vector',
@@ -81,6 +82,7 @@ class Statement(StatementMixin):
         'in_response_to',
         'search_in_response_to',
         'created_at',
+        'last_updated_at',
         'confidence',
         'storage',
         'count',
@@ -100,6 +102,7 @@ class Statement(StatementMixin):
         self.in_response_to = in_response_to
         self.search_in_response_to = kwargs.get('search_in_response_to', '')
         self.created_at = kwargs.get('created_at', datetime.now())
+        self.last_updated_at = kwargs.get('last_updated_at', datetime.now())
         self.count = kwargs.pop('count', 1)
         # for spaCy
         self.vector = kwargs.pop('vector', [])

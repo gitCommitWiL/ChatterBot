@@ -1,6 +1,6 @@
 import re
 from chatterbot.storage import StorageAdapter
-
+import datetime
 class MongoDatabaseAdapter(StorageAdapter):
     """
     The MongoDatabaseAdapter is an interface that allows
@@ -85,7 +85,7 @@ class MongoDatabaseAdapter(StorageAdapter):
         search_in_response_to_contains = kwargs.pop('search_in_response_to_contains', None)
         useStatementsCollection = kwargs.pop('statementsCollection', True)
         sortBy = kwargs.pop('sort', {})
-        groupBy = kwargs.pop('group', "text")
+        groupBy = kwargs.pop('group', "_id")
 
         collection = self.statements
 
@@ -189,9 +189,8 @@ class MongoDatabaseAdapter(StorageAdapter):
             if kwargs.get('in_response_to'):
                 kwargs['search_in_response_to'] = self.tagger.get_text_index_string(kwargs['in_response_to'])
         kwargs['count'] = 1
-        inserted = self.statements.insert_one(kwargs)
-
-        kwargs['id'] = inserted.inserted_id
+        # update instead of insert to prevent duplicates
+        self.statements.update_one({"text": kwargs['text'], "in_response_to": kwargs['in_response_to']}, {"$setOnInsert": kwargs}, upsert=True)
 
         return Statement(**kwargs)
 
@@ -199,7 +198,6 @@ class MongoDatabaseAdapter(StorageAdapter):
         """
         Creates multiple statement entries.
         """
-        create_statements = []
 
         for statement in statements:
             statement_data = statement.serialize()
@@ -212,9 +210,8 @@ class MongoDatabaseAdapter(StorageAdapter):
             if not statement.search_in_response_to and statement.in_response_to:
                 statement_data['search_in_response_to'] = self.tagger.get_text_index_string(statement.in_response_to)
             statement_data['count'] = 1
-            create_statements.append(statement_data)
-
-        self.statements.insert_many(create_statements)
+            # update instead of insert to prevent duplicates
+            self.statements.update_one({"text": statement_data['text'], "in_response_to": statement_data['in_response_to']}, {"$setOnInsert": statement_data}, upsert=True)
 
     def update(self, statement, useText=True, useStatementsCollection=True, setNewTags=False, useInResponseTo=False, useConversation=True):
         data = statement.serialize()
@@ -223,6 +220,7 @@ class MongoDatabaseAdapter(StorageAdapter):
         data.pop('count', None)
         data.pop('conversation', None)
 
+        data['last_updated_at'] = datetime.datetime.now()
         if statement.search_text:
             data['search_text'] = statement.search_text
         else:
@@ -264,7 +262,7 @@ class MongoDatabaseAdapter(StorageAdapter):
         else:
             update_data['$setOnInsert']['tags'] = []
         update_data['$set'] = data
-        
+
         search_parameters = {}
         if statement.id is not None:
             search_parameters['_id'] = statement.id
