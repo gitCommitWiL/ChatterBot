@@ -163,7 +163,7 @@ class MongoDatabaseAdapter(StorageAdapter):
             kwargs['search_in_response_to'] = re.compile(or_regex, re.IGNORECASE)
 
         relatedStatements = []
-        print(kwargs)
+
         if sortBy:
             relatedStatements = collection.aggregate([{"$match": kwargs}, {'$sort': sortBy}, {"$group": {"_id": "$" + groupBy, "details": {"$first": '$$CURRENT'}}}, {'$limit': page_size}])
         else:
@@ -189,7 +189,6 @@ class MongoDatabaseAdapter(StorageAdapter):
             if kwargs.get('in_response_to'):
                 kwargs['search_in_response_to'] = self.tagger.get_text_index_string(kwargs['in_response_to'])
         kwargs['count'] = 1
-        kwargs['conversation'] = ''
         inserted = self.statements.insert_one(kwargs)
 
         kwargs['id'] = inserted.inserted_id
@@ -212,17 +211,17 @@ class MongoDatabaseAdapter(StorageAdapter):
 
             if not statement.search_in_response_to and statement.in_response_to:
                 statement_data['search_in_response_to'] = self.tagger.get_text_index_string(statement.in_response_to)
-            statement_data['count'] = 1 
-            statement_data['conversation'] = ''
+            statement_data['count'] = 1
             create_statements.append(statement_data)
 
         self.statements.insert_many(create_statements)
 
-    def update(self, statement, useText=True, useStatementsCollection=True, setNewTags=False, useInResponseTo=False):
+    def update(self, statement, useText=True, useStatementsCollection=True, setNewTags=False, useInResponseTo=False, useConversation=True):
         data = statement.serialize()
         data.pop('id', None)
         data.pop('tags', None)
         data.pop('count', None)
+        data.pop('conversation', None)
 
         if statement.search_text:
             data['search_text'] = statement.search_text
@@ -239,7 +238,20 @@ class MongoDatabaseAdapter(StorageAdapter):
         elif data.get('in_response_to'):
             data['search_in_response_to'] = self.tagger.get_text_index_string(data['in_response_to'])
 
-        update_data = {'$setOnInsert': {"id": None}, "$inc": {"count": 1}}
+        update_data = {'$setOnInsert': {"id": None, "conversation": statement.conversation}, "$inc": {"count": 1}}
+
+        ## don't update: conversation, vectors, vector_norm, created_at
+        if useStatementsCollection:
+            data.pop('created_at')
+            update_data['$setOnInsert']['created_at'] = statement.created_at
+            data.pop('text')
+            update_data['$setOnInsert']['text'] = statement.text
+            data.pop('search_in_response_to')
+            update_data['$setOnInsert']['search_in_response_to'] = statement.search_in_response_to
+            data.pop('vector')
+            update_data['$setOnInsert']['vector'] = statement.vector
+            data.pop('vector_norm')
+            update_data['$setOnInsert']['vector_norm'] = statement.vector_norm
 
         if setNewTags:
             data['tags'] = statement.tags
@@ -252,6 +264,7 @@ class MongoDatabaseAdapter(StorageAdapter):
         else:
             update_data['$setOnInsert']['tags'] = []
         update_data['$set'] = data
+        
         search_parameters = {}
         if statement.id is not None:
             search_parameters['_id'] = statement.id
@@ -260,7 +273,8 @@ class MongoDatabaseAdapter(StorageAdapter):
                 search_parameters['text'] = statement.text
             if useInResponseTo:
                 search_parameters['in_response_to'] = statement.in_response_to
-            search_parameters['conversation'] = statement.conversation
+            if useConversation:
+                search_parameters['conversation'] = statement.conversation
 
         update_operation = collection.update_one(
             search_parameters,

@@ -118,7 +118,9 @@ class ListTrainer(Trainer):
             previous_vector = statement_vector
             previous_vector_norm = statementNLP.vector_norm
 
-            statements_to_create.append(statement)
+            ## if not a response, don't add
+            if statement.in_response_to:
+                statements_to_create.append(statement)
 
         self.chatbot.storage.create_many(statements_to_create)
 
@@ -180,8 +182,10 @@ class ChatterBotCorpusTrainer(Trainer):
                     previous_statement_search_text = statement_search_text
                     previous_vector = statement_vector
                     previous_vector_norm = statementNLP.vector_norm
-
-                    statements_to_create.append(statement)
+                    
+                    ## if not a response, don't add
+                    if statement.in_response_to:
+                        statements_to_create.append(statement)
 
             if statements_to_create:
                 self.chatbot.storage.create_many(statements_to_create)
@@ -364,7 +368,9 @@ class UbuntuCorpusTrainer(Trainer):
                             previous_vector = statement_vector
                             previous_vector_norm = statementNLP.vector_norm
 
-                            statements_from_file.append(statement)
+                            ## if not a response, don't add
+                            if statement.in_response_to:
+                                statements_from_file.append(statement)
 
             self.chatbot.storage.create_many(statements_from_file)
 

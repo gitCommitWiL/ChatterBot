@@ -278,7 +278,7 @@ class ChatBot(object):
             nlpText = self.storage.tagger.nlp(previous_statement.text)
 
             ## store these 2 values
-            statement.vector =  nlpText.vector.tolist()
+            statement.vector = nlpText.vector.tolist()
             statement.vector_norm = nlpText.vector_norm
 
         self.logger.info('Adding "{}" as a response to "{}"'.format(
@@ -289,11 +289,10 @@ class ChatBot(object):
             for preprocessor in self.preprocessors:
                 statement = preprocessor(statement)
         statementCopy = copy.copy(statement)
-        statementCopy.conversation = ''
         # will upsert if doesn't exist, otherwise just update existing (tags and stuff); don't create duplicate
-        return self.storage.update(statementCopy, useInResponseTo=True)
+        return self.storage.update(statementCopy, useInResponseTo=True, useConversation=False)
 
-    def get_latest_response(self, conversation, fromBot=True, recentMinutes=2, useStatementsCollection=True):
+    def get_latest_response(self, conversation, fromBot=True, recentMinutes=1, useStatementsCollection=True):
         """
         Returns the latest response in a conversation if it exists.
         Returns None if a matching conversation cannot be found.
