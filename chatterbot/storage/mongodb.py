@@ -1,6 +1,7 @@
 import re
 from chatterbot.storage import StorageAdapter
 import datetime
+from concurrent import futures
 class MongoDatabaseAdapter(StorageAdapter):
     """
     The MongoDatabaseAdapter is an interface that allows
@@ -166,8 +167,13 @@ class MongoDatabaseAdapter(StorageAdapter):
 
         if sortBy:
             relatedStatements = collection.aggregate([{"$match": kwargs}, {'$sort': sortBy}, {"$group": {"_id": "$" + groupBy, "details": {"$first": '$$CURRENT'}}}, {'$limit': page_size}])
-        else:
+        elif groupBy != "_id":
             relatedStatements = collection.aggregate([{"$match": kwargs}, {"$group": {"_id": "$" + groupBy, "details": {"$first": '$$CURRENT'}}}, {'$limit': page_size}])
+        else:
+            relatedStatements = collection.find(kwargs).limit(page_size)
+            for match in relatedStatements:
+                yield self.mongo_to_object(match)
+            return
 
         for match in relatedStatements:
             yield self.mongo_to_object(match['details'])
@@ -198,8 +204,7 @@ class MongoDatabaseAdapter(StorageAdapter):
         """
         Creates multiple statement entries.
         """
-
-        for statement in statements:
+        def create_in_db(statement):
             statement_data = statement.serialize()
             tag_data = list(set(statement_data.pop('tags', [])))
             statement_data['tags'] = tag_data
@@ -212,6 +217,9 @@ class MongoDatabaseAdapter(StorageAdapter):
             statement_data['count'] = 1
             # update instead of insert to prevent duplicates
             self.statements.update_one({"text": statement_data['text'], "in_response_to": statement_data['in_response_to']}, {"$setOnInsert": statement_data}, upsert=True)
+
+        with futures.ThreadPoolExecutor() as pool:
+            pool.map(create_in_db, statements,)
 
     def update(self, statement, useText=True, useStatementsCollection=True, setNewTags=False, useInResponseTo=False, useConversation=True):
         data = statement.serialize()

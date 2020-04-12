@@ -3,6 +3,7 @@ from chatterbot.storage import StorageAdapter
 from chatterbot.logic import LogicAdapter
 from chatterbot.search import TextSearch, IndexedTextSearch
 from chatterbot import utils
+from chatterbot import singleton_classes
 import datetime
 import copy
 
@@ -52,6 +53,7 @@ class ChatBot(object):
         for preprocessor in preprocessors:
             self.preprocessors.append(utils.import_module(preprocessor))
 
+
         self.logger = kwargs.get('logger', logging.getLogger(__name__))
 
         # Allow the bot to save input it receives so that it can learn
@@ -79,6 +81,8 @@ class ChatBot(object):
 
         persist_values_to_response = kwargs.pop('persist_values_to_response', {})
 
+        checkSpelling = kwargs.pop('checkSpelling', True)
+
         if isinstance(statement, str):
             kwargs['text'] = statement
 
@@ -100,17 +104,22 @@ class ChatBot(object):
 
         text = kwargs.pop('text')
 
-        ## use spaCy early
+        # use spaCy early
         nlpText = self.storage.tagger.nlp(text)
+        # do a quick spell check
+        if checkSpelling:
+            oldText = nlpText.text
+            nlpText = self.storage.tagger.nlp(singleton_classes.singleSpacy.checkSpell(nlpText))
+            if nlpText.text.casefold() != oldText.casefold():
+                tags.append("skipLearning")
 
         ## store these 2 values
         kwargs['vector'] = nlpText.vector.tolist()
         kwargs['vector_norm'] = nlpText.vector_norm
 
-        input_statement = Statement(text=text, **kwargs)
+        input_statement = Statement(text=nlpText.text, **kwargs)
 
         input_statement.add_tags(*tags)
-
 
         # Preprocess the input statement
         for preprocessor in self.preprocessors:
@@ -142,7 +151,7 @@ class ChatBot(object):
         input_statement.vector_norm = 0
 
         # just in case need to prevent specific trolls
-        if not bannedFromLearning and not self.read_only:
+        if not bannedFromLearning and not self.read_only and "skipLearning" not in input_statement.tags:
 
             if "learnResponseOnly" not in input_statement.tags and "learnResponseOnly" not in response.tags:
                 # learn that user's input is a valid response to bot's last response
@@ -150,22 +159,15 @@ class ChatBot(object):
             else:
                 # remove the learnResponseOnly tag from input
                 input_statement.tags.remove("learnResponseOnly")
-            # for when using a default response, but still want to learn that input is a valid response (to previous response)
-            if self.read_only is None:
-
-                # tag refers to the use of default response; for the next input, don't learn with this input
-                response.tags = ["newResponse"]
-
-            # for regular learning
-            else:
-                # if confidence is 1, then this is a duplicate, but learn for stats (won't create another duplicate)
-
+            if "newResponse" not in input_statement.tags:
                 # want to also learn that bot response is valid for user's input statement
                 self.learn_response(response, input_statement)
-
                 # empty tags for latestResponse collection
                 response.tags = []
-
+            else:
+                ## don't learn input for new thing
+                response.tags = ["newResponse"]
+                
             # record/ update the latest reponse by bot in the conversation
             self.storage.update(response, useText=False, useStatementsCollection=False, setNewTags=True, useInResponseTo=False)
         return response
